@@ -113,7 +113,7 @@ def observations(pose, landmarks):
     return list(filter(lambda x: x != None, [observation(pose, i) for i in landmarks]))
 
 
-def calc_likelihood(pose, measurement):
+def likelihood(pose, measurement):
     x, y, theta = pose
     # robot が確認した ランドマークの距離と向き
     distance, direction, lx, ly = measurement
@@ -126,12 +126,12 @@ def calc_likelihood(pose, measurement):
 
 def change_weights(particles, measurement):
     for p in particles:
-        p.weight *= calc_likelihood(p.pose, measurement)
+        p.weight *= likelihood(p.pose, measurement)
     ws = [p.weight for p in particles]
     s = sum(ws)
     for p in particles: p.weight = p.weight / s
 
-def calc_measurements(state, landmarks, measurements_list):
+def measurements(state, landmarks, measurements_list):
     ms = observations(state, landmarks)
     measurements_list.append(ms)
     return ms
@@ -187,7 +187,7 @@ def simurate_robot(particles, state, u, landmarks):
     path = [copy.deepcopy(state)]
     for i in range(LOOP_RANGE):
         state = update_state(u, state)
-        ms = calc_measurements(state, landmarks, measurements_list)
+        ms = measurements(state, landmarks, measurements_list)
         for p in particles: p.pose = update_state(u, p.pose)
         for m in ms: change_weights(particles, m)
         particle_path.append(copy.deepcopy(particles))
