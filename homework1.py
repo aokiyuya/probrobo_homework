@@ -20,6 +20,7 @@ LOOP_RANGE = 100
 MOD_NUM = LOOP_RANGE / 20
 U = np.array([0.2, math.pi / 180 * 20])
 RANDMARKS = [np.array([-0.5, 0.0]), np.array([0.5, 0.0]), np.array([0.0, 0.5])]
+
 # Particle Class Object
 class Particle:
     def __init__(self, p, w):  # 姿勢も指定できるようにしましょう
@@ -51,17 +52,18 @@ def update_state(u, state, error=True):
 # generate (init) particles. if it has no args, init particles use random
 def generate_particles(init_weight=None, sample=None):
     if sample is None:
-        sample = 100
+        sample = 1000
     if init_weight is None:
-        x = [random.uniform(0, 1) for i in range(sample)]
-        x_sum = sum(x)
-        weight_list = list(map(lambda y: y / x_sum, x))
+        weight_list = [1.0 / sample for i in range(sample)]
     else:
         weight_list = init_weight
-
-    particles = collections.deque([Particle(INITIAL_STATE, j * 1.0)
-                                   for j in weight_list])
-    return particles
+    initial_particles = collections.deque()
+    for i in range(sample):
+        x = random.uniform(-1, 1)
+        y = random.uniform(-1, 1)
+        theta = random.uniform(0, 360)
+        initial_particles.append(Particle([x, y, theta], weight_list[i] * 1.0))
+    return initial_particles
 
 
 # make accumulation of weights
@@ -74,13 +76,13 @@ def make_accum(particles):
     return accum
 
 
-# update Particle. delete far particle, and increase particle has high likelihood
+# update Particle. delete far particle, and increase particle that has high likelihood
 def update_particles(particles):
     accum = make_accum(particles)
     re_N = 1.0 / len(particles)
     pointer = random.uniform(0.0, re_N)
     new_particles = collections.deque()
-    while pointer < 1.0:
+    while pointer < 1.0 and len(particles) > 0:
         if accum[0] >= pointer:
             new_particles.append(
                 Particle(copy.deepcopy(particles[0].pose), re_N))
@@ -88,8 +90,10 @@ def update_particles(particles):
         else:
             accum.popleft()
             particles.popleft()
+    # particle が 重さが平均値の2倍くらいなくて 3分の1以下だと信用ならない
+    if len(new_particles) < (1 / re_N / 2):
+        new_particles = generate_particles()
     return new_particles
-
 
 def relative_landmark_pos(pose, landmark):
     x, y, theta = pose
@@ -100,7 +104,8 @@ def relative_landmark_pos(pose, landmark):
 
 
 def observation(pose, landmark):
-    actual_distance, actual_direction, lx, ly = relative_landmark_pos(pose, landmark)
+    actual_distance, actual_direction, lx, ly = relative_landmark_pos(
+        pose, landmark)
     if math.cos(actual_direction) < 0.0:
         return None
     measured_distance = random.gauss(actual_distance, actual_distance / 10)
@@ -113,7 +118,7 @@ def observations(pose, landmarks):
     return list(filter(lambda x: x != None, [observation(pose, i) for i in landmarks]))
 
 
-def likelihood(pose, measurement):
+def calc_likelihood(pose, measurement):
     x, y, theta = pose
     # robot が確認した ランドマークの距離と向き
     distance, direction, lx, ly = measurement
@@ -126,12 +131,12 @@ def likelihood(pose, measurement):
 
 def change_weights(particles, measurement):
     for p in particles:
-        p.weight *= likelihood(p.pose, measurement)
+        p.weight *= calc_likelihood(p.pose, measurement)
     ws = [p.weight for p in particles]
     s = sum(ws)
     for p in particles: p.weight = p.weight / s
 
-def measurements(state, landmarks, measurements_list):
+def calc_measurements(state, landmarks, measurements_list):
     ms = observations(state, landmarks)
     measurements_list.append(ms)
     return ms
@@ -187,7 +192,7 @@ def simurate_robot(particles, state, u, landmarks):
     path = [copy.deepcopy(state)]
     for i in range(LOOP_RANGE):
         state = update_state(u, state)
-        ms = measurements(state, landmarks, measurements_list)
+        ms = calc_measurements(state, landmarks, measurements_list)
         for p in particles: p.pose = update_state(u, p.pose)
         for m in ms: change_weights(particles, m)
         particle_path.append(copy.deepcopy(particles))
